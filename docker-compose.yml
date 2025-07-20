@@ -1,0 +1,73 @@
+services:
+  bomb_test_db:
+    image: postgres:17
+    container_name: bomb_test_db
+    env_file:
+      - .env
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - bomb_test_network
+
+  redis:
+    image: redis:8.0.1
+    container_name: bomb_test_redis_cache
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - bomb_test_network
+
+  bomb_test_app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: bomb_test_main
+    env_file:
+      - .env
+    environment:
+      - DB_HOST=bomb_test_db
+      - DB_PORT=${DB_PORT}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=${DB_NAME}
+      - REDIS_HOST=redis
+    depends_on:
+      bomb_test_db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    volumes:
+      - .:/bomb_test_app:cached
+      - ./data/docs/offert:/bomb_test_app/data/docs/offert:delegated
+    command: >
+      sh -c "poetry run alembic upgrade head &&
+             poetry run python main.py"
+    networks:
+      - bomb_test_network
+
+networks:
+  bomb_test_network:
+    driver: bridge
+
+volumes:
+  postgres_data:
